@@ -62,11 +62,30 @@ jobs:
         host: ${{ secrets.SERVER_HOST }}
         username: ${{ secrets.SERVER_USER }}
         key: ${{ secrets.SERVER_SSH_KEY }}
-        passphrase: ${{ secrets.SSH_PASSPHRASE }}  # Add this line
+        passphrase: ${{ secrets.SSH_PASSPHRASE }}
         script: |
           cd /opt/aurifi
+          
+          echo "🔄 Pulling latest backend image..."
           docker pull ${{ secrets.DOCKERHUB_USERNAME }}/aurifi-backend:latest
-          docker compose stop backend
-          docker compose up -d backend
+          
+          echo "🔄 Updating backend service..."
+          docker compose up -d --no-deps backend
+          
+          echo "⏳ Waiting for backend to be ready..."
+          sleep 15
+          
+          echo "🔄 Restarting nginx to refresh connections..."
+          docker compose restart nginx
+          
+          echo "🧹 Cleaning up old images..."
           docker image prune -f
+          
+          echo "📊 Checking service status..."
+          docker compose ps
+          
+          echo "🔍 Testing backend connectivity..."
+          sleep 10
+          curl -f http://localhost/api/v1/user/ || echo "⚠️  Backend API test failed"
+          
           echo "✅ Backend deployed successfully!"
