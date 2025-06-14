@@ -607,34 +607,68 @@ def get_project_data(project_id):
         }), 500
 
 
-@project_bp.route('/download_file/<path:file_path>', methods=['GET'])
-def download_file(file_path):
-    """Download a file from the server
+@project_bp.route('/download_file', methods=['GET'])
+def download_file():
+    """Download a file from the server using file_path from query parameter
     
-    Args:
-        file_path (str): Path to the file to be downloaded
-        
     Returns:
         File response or error message
     """
     try:
+        # Get file path from query parameter instead of URL path
+        file_path = request.args.get('file_path')
+        
+        if not file_path:
+            return jsonify({
+                'status': 'error',
+                'message': 'Missing file_path parameter'
+            }), 400
+        
+        # If running in Docker, ensure we're using container paths
+        if file_path.startswith('C:\\') or file_path.startswith('/Users/'):
+            # This is a local development path, need to convert to container path
+            # Extract just the dataset-relative path
+            if 'datasets' in file_path:
+                parts = file_path.split('datasets')[-1]
+                parts = parts.replace('\\', '/').strip('/')
+                file_path = f'/app/datasets/{parts}'
+        
         # Normalize the file path
         normalized_path = os.path.normpath(file_path)
+        
+        # Security check - ensure the path is within the datasets directory
+        datasets_dir = os.path.join('/app', 'datasets')
+        if not normalized_path.startswith(datasets_dir):
+            return jsonify({
+                'status': 'error',
+                'message': 'Invalid file path'
+            }), 403
 
         # Ensure the file exists
         if not os.path.exists(normalized_path):
+            logger.error(f"File not found at path: {normalized_path}")
             return jsonify({
                 'status': 'error',
-                'message': 'File not found'
+                'message': 'File not found',
+                'path_tried': normalized_path
             }), 404
         
+        # Get the filename for download
+        filename = os.path.basename(normalized_path)
+        
         # Send the file for download
-        return send_file(normalized_path, as_attachment=True)
+        return send_file(
+            normalized_path, 
+            as_attachment=True,
+            download_name=filename,
+            mimetype='application/octet-stream'
+        )
     except Exception as e:
         logger.error(f"Error in download_file: {str(e)}")
         return jsonify({
             'status': 'error',
-            'message': 'An unexpected error occurred'
+            'message': 'An unexpected error occurred',
+            'details': str(e)
         }), 500
 
 @project_bp.route('/get_datatype_mapping/<project_id>', methods=['GET'])
